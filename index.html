@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>EcoFogo App - Coleta Offline</title>
+  <meta name="theme-color" content="#2d6a4f">
+  <link rel="manifest" href="manifest.json">
+  <!-- Tailwind CSS via CDN para UI limpa e moderna -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Estilos personalizados para o tema EcoFogo */
+    :root { --primary: #2d6a4f; }
+    body { background-color: #f4f6f4; font-family: 'Segoe UI', system-ui, sans-serif; }
+    .loader { border: 4px solid #f3f3f3; border-top: 4px solid var(--primary); border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; display: none; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .photo-preview { width: 100%; height: 80px; object-fit: cover; border-radius: 0.5rem; }
+  </style>
+</head>
+<body class="text-gray-800 pb-20">
+
+  <!-- Header -->
+  <header class="bg-[#2d6a4f] text-white p-4 shadow-md sticky top-0 z-50 flex justify-between items-center">
+    <div>
+      <h1 class="text-xl font-bold">EcoFogo</h1>
+      <p class="text-xs opacity-80">Coleta de Campo (Offline-First)</p>
+    </div>
+    <div id="status-indicator" class="flex items-center gap-2 text-sm font-semibold bg-white/20 px-3 py-1 rounded-full">
+      <span id="network-dot" class="w-3 h-3 rounded-full bg-green-400"></span>
+      <span id="network-text">Online</span>
+    </div>
+  </header>
+
+  <!-- Notificações -->
+  <div id="toast" class="fixed top-20 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-4 py-2 rounded shadow-lg transition-opacity duration-300 opacity-0 pointer-events-none z-50">
+    Mensagem aqui
+  </div>
+
+  <main class="p-4 max-w-md mx-auto space-y-6">
+    
+    <!-- Painel de Sincronização -->
+    <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex justify-between items-center">
+      <div>
+        <h2 class="font-bold text-gray-700">Registros Pendentes</h2>
+        <p id="pending-count" class="text-2xl font-black text-[#2d6a4f]">0</p>
+      </div>
+      <button type="button" onclick="syncData()" id="btn-sync" class="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 disabled:opacity-50">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+        Sincronizar
+      </button>
+    </div>
+
+    <!-- Formulário de Coleta -->
+    <form id="coleta-form" class="bg-white p-4 rounded-lg shadow-sm border border-gray-200 space-y-4">
+      
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 mb-1">Nome do Brigadista / Pesquisador *</label>
+        <input type="text" id="nome" required class="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-[#2d6a4f] outline-none">
+      </div>
+
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 mb-1">Ponto de Coleta *</label>
+        <input type="text" id="ponto" required placeholder="Ex: Ponto A - Entrada" class="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-[#2d6a4f] outline-none">
+      </div>
+
+      <!-- GPS -->
+      <div class="bg-gray-50 p-3 rounded border border-gray-200">
+        <label class="block text-sm font-semibold text-gray-700 mb-2">Localização (GPS) *</label>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="getGPS()" class="bg-gray-200 text-gray-700 px-3 py-2 rounded font-medium hover:bg-gray-300 transition">
+            Capturar GPS
+          </button>
+          <input type="text" id="gps" readonly required placeholder="Aguardando..." class="w-full bg-transparent border-none focus:ring-0 text-sm font-mono text-gray-600 cursor-not-allowed">
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 mb-1">Tipo de Achado *</label>
+        <select id="tipo" required class="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-[#2d6a4f] outline-none bg-white">
+          <option value="">Selecione...</option>
+          <option value="Fauna - Avistamento">Fauna - Avistamento</option>
+          <option value="Fauna - Carcaça">Fauna - Carcaça</option>
+          <option value="Flora - Espécie Nativa">Flora - Espécie Nativa</option>
+          <option value="Foco de Incêndio">Foco de Incêndio</option>
+          <option value="Vestígio Humano">Vestígio Humano</option>
+          <option value="Outro">Outro</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 mb-1">Espécie Identificada (Se souber)</label>
+        <input type="text" id="especie" class="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-[#2d6a4f] outline-none">
+      </div>
+
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 mb-1">Descrição do Cenário *</label>
+        <textarea id="descricao" required rows="3" class="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-[#2d6a4f] outline-none"></textarea>
+      </div>
+
+      <!-- Fotos -->
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 mb-1">Fotos (Máx 8)</label>
+        <p class="text-xs text-gray-500 mb-2">Tire fotos na hora ou escolha da galeria.</p>
+        <input type="file" id="fotos-input" accept="image/*" capture="environment" multiple class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-[#e0ece6] file:text-[#2d6a4f] hover:file:bg-[#cde0d5]">
+        <div id="fotos-preview" class="grid grid-cols-4 gap-2 mt-3"></div>
+      </div>
+
+      <button type="submit" id="btn-save" class="w-full bg-[#2d6a4f] hover:bg-[#1f4a37] text-white font-bold py-3 px-4 rounded-lg transition mt-4 flex justify-center items-center gap-2">
+        <span>Salvar Registro Localmente</span>
+        <div id="save-loader" class="loader"></div>
+      </button>
+    </form>
+
+  </main>
+
+  <script>
+    // ==========================================
+    // CONFIGURAÇÕES DA ARQUITETURA (ALTERE AQUI)
+    // ==========================================
+    const APPSCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxI2CpWLIFqSirarTkTDp_XMZ7R5nOG38sGP9KS3mk_PUNyUTO_jyPEh9936e3OpXXG0g/exec'; // Gerado no Passo 1
+    const IMGBB_API_KEY = 'c533fab8f7cf140d107813529918faa8';     // Gerado no Passo 2
+    
+    // ==========================================
+    // VARIÁVEIS GLOBAIS E ESTADO
+    // ==========================================
+    let fotosArrayBase64 = [];
+    const DB_NAME = 'EcoFogoDB';
+    const STORE_NAME = 'registros';
+
+    // ==========================================
+    // 1. INICIALIZAÇÃO E NETWORK LISTENER
+    // ==========================================
+    window.addEventListener('load', () => {
+      initDB();
+      updateNetworkStatus();
+      updatePendingCount();
+    });
+
+    window.addEventListener('online', updateNetworkStatus);
+    window.addEventListener('offline', updateNetworkStatus);
+
+    function updateNetworkStatus() {
+      const isOnline = navigator.onLine;
+      const dot = document.getElementById('network-dot');
+      const text = document.getElementById('network-text');
+      const btnSync = document.getElementById('btn-sync');
+
+      if (isOnline) {
+        dot.className = 'w-3 h-3 rounded-full bg-green-400';
+        text.textContent = 'Online';
+        btnSync.disabled = false;
+      } else {
+        dot.className = 'w-3 h-3 rounded-full bg-red-500';
+        text.textContent = 'Offline';
+        btnSync.disabled = true;
+      }
+    }
+
+    function showToast(message, isError = false) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.style.backgroundColor = isError ? '#e53e3e' : '#2f855a';
+      toast.classList.remove('opacity-0');
+      setTimeout(() => toast.classList.add('opacity-0'), 3000);
+    }
+
+    // ==========================================
+    // 2. BANCO DE DADOS LOCAL (INDEXEDDB)
+    // ==========================================
+    function initDB() {
+      const request = indexedDB.open(DB_NAME, 1);
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        }
+      };
+      request.onerror = () => console.error("Erro ao abrir IndexedDB");
+    }
+
+    function saveToDB(registro) {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, 1);
+        request.onsuccess = (event) => {
+          const db = event.target.result;
+          const tx = db.transaction(STORE_NAME, 'readwrite');
+          const store = tx.objectStore(STORE_NAME);
+          store.add(registro);
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        };
+      });
+    }
+
+    function getPendingRecords() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, 1);
+        request.onsuccess = (event) => {
+          const db = event.target.result;
+          const tx = db.transaction(STORE_NAME, 'readonly');
+          const store = tx.objectStore(STORE_NAME);
+          const getAll = store.getAll();
+          getAll.onsuccess = () => resolve(getAll.result);
+          getAll.onerror = () => reject(getAll.error);
+        };
+      });
+    }
+
+    function deleteRecord(id) {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, 1);
+        request.onsuccess = (event) => {
+          const db = event.target.result;
+          const tx = db.transaction(STORE_NAME, 'readwrite');
+          const store = tx.objectStore(STORE_NAME);
+          store.delete(id);
+          tx.oncomplete = () => resolve();
+        };
+      });
+    }
+
+    async function updatePendingCount() {
+      try {
+        const records = await getPendingRecords();
+        document.getElementById('pending-count').textContent = records.length;
+        if(records.length > 0 && navigator.onLine) {
+            document.getElementById('btn-sync').classList.add('animate-pulse');
+        } else {
+            document.getElementById('btn-sync').classList.remove('animate-pulse');
+        }
+      } catch (e) {
+        console.error("Erro ao contar registros", e);
+      }
+    }
+
+    // ==========================================
+    // 3. CAPTURA DE DADOS (GPS E FOTOS)
+    // ==========================================
+    function getGPS() {
+      const gpsInput = document.getElementById('gps');
+      gpsInput.value = "Buscando satélites...";
+      if (!navigator.geolocation) {
+        gpsInput.value = "GPS não suportado.";
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          gpsInput.value = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+        },
+        (error) => {
+          gpsInput.value = "Erro ao capturar GPS.";
+          showToast("Ative o GPS do aparelho", true);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    }
+
+    document.getElementById('fotos-input').addEventListener('change', function(e) {
+      const files = Array.from(e.target.files).slice(0, 8); // Limita a 8 fotos
+      const previewContainer = document.getElementById('fotos-preview');
+      previewContainer.innerHTML = '';
+      fotosArrayBase64 = [];
+
+      files.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const base64String = event.target.result;
+          fotosArrayBase64.push(base64String); // Salva Base64 com header data:image/jpeg;base64,...
+          
+          const img = document.createElement('img');
+          img.src = base64String;
+          img.className = 'photo-preview shadow-sm';
+          previewContainer.appendChild(img);
+        };
+        // Para otimização de cache offline, comprimimos lendo direto, mas em prod ideal é usar Canvas para redimensionar.
+        reader.readAsDataURL(file);
+      });
+    });
+
+    // ==========================================
+    // 4. SUBMISSÃO DO FORMULÁRIO (SALVA OFFLINE)
+    // ==========================================
+    document.getElementById('coleta-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const btn = document.getElementById('btn-save');
+      const loader = document.getElementById('save-loader');
+      btn.disabled = true;
+      loader.style.display = 'block';
+
+      // Cria ID único baseado no timestamp (Ex: REG-20260507-103000)
+      const now = new Date();
+      const id = `REG-${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}-${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}${now.getSeconds().toString().padStart(2,'0')}`;
+      
+      const padraoDataHora = now.toLocaleString('pt-BR');
+
+      const registro = {
+        id: id,
+        nome: document.getElementById('nome').value,
+        ponto: document.getElementById('ponto').value,
+        data_hora: padraoDataHora,
+        gps: document.getElementById('gps').value,
+        tipo: document.getElementById('tipo').value,
+        especie: document.getElementById('especie').value || 'Não identificada',
+        descricao: document.getElementById('descricao').value,
+        fotos: fotosArrayBase64 // Array de Base64 strings
+      };
+
+      try {
+        await saveToDB(registro);
+        showToast("Registro salvo no banco local com sucesso!");
+        document.getElementById('coleta-form').reset();
+        document.getElementById('fotos-preview').innerHTML = '';
+        fotosArrayBase64 = [];
+        updatePendingCount();
+      } catch (error) {
+        showToast("Erro ao salvar localmente.", true);
+        console.error(error);
+      } finally {
+        btn.disabled = false;
+        loader.style.display = 'none';
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    });
+
+    // ==========================================
+    // 5. SINCRONIZAÇÃO (IMGBB -> GOOGLE SHEETS)
+    // ==========================================
+    async function syncData() {
+      if (!navigator.onLine) {
+        showToast("Você está offline. Conecte-se para sincronizar.", true);
+        return;
+      }
+
+      if (APPSCRIPT_URL.includes('SEU_LINK') || IMGBB_API_KEY.includes('SUA_CHAVE')) {
+        showToast("Configure as chaves da API no código fonte primeiro!", true);
+        return;
+      }
+
+      const records = await getPendingRecords();
+      if (records.length === 0) {
+        showToast("Nenhum registro pendente.");
+        return;
+      }
+
+      const btnSync = document.getElementById('btn-sync');
+      btnSync.disabled = true;
+      btnSync.innerHTML = '<div class="loader" style="display:block; border-top-color:#fff;"></div> Sincronizando...';
+
+      let successCount = 0;
+
+      for (const record of records) {
+        try {
+          // Passo A: Fazer upload das fotos para o ImgBB
+          let fotosUrls = ['', '', '', '', '', '', '', '']; // Array fixo de 8 posições
+          
+          for (let i = 0; i < record.fotos.length; i++) {
+             // ImgBB precisa apenas do base64 puro, sem o prefixo 'data:image/...;base64,'
+             const base64Data = record.fotos[i].split(',')[1]; 
+             
+             const formData = new FormData();
+             formData.append('image', base64Data);
+
+             const imgResponse = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+               method: 'POST',
+               body: formData
+             });
+             
+             const imgData = await imgResponse.json();
+             if (imgData.success) {
+               fotosUrls[i] = imgData.data.url; // Pega a URL pública
+             }
+          }
+
+          // Passo B: Montar payload para o Google Apps Script
+          const payload = {
+            id: record.id,
+            nome: record.nome,
+            ponto: record.ponto,
+            data_hora: record.data_hora,
+            gps: record.gps,
+            tipo: record.tipo,
+            especie: record.especie,
+            descricao: record.descricao,
+            foto1: fotosUrls[0],
+            foto2: fotosUrls[1],
+            foto3: fotosUrls[2],
+            foto4: fotosUrls[3],
+            foto5: fotosUrls[4],
+            foto6: fotosUrls[5],
+            foto7: fotosUrls[6],
+            foto8: fotosUrls[7]
+          };
+
+          // Passo C: Enviar para Google Sheets via POST
+          // Usamos mode: 'no-cors' ou content-type 'text/plain' para evitar block de CORS do Google
+          const sheetResponse = await fetch(APPSCRIPT_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'text/plain;charset=utf-8',
+            },
+            body: JSON.stringify(payload)
+          });
+
+          // Se chegou aqui sem crashar a network, consideramos sucesso (no-cors é opaco)
+          await deleteRecord(record.id);
+          successCount++;
+          updatePendingCount();
+
+        } catch (error) {
+          console.error("Falha ao sincronizar registro:", record.id, error);
+          // Continua para o próximo registro
+        }
+      }
+
+      btnSync.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Sincronizar';
+      btnSync.disabled = false;
+
+      if (successCount === records.length) {
+        showToast("Todos os registros foram sincronizados!");
+      } else {
+        showToast(`${successCount} de ${records.length} enviados. Tente novamente os restantes.`, true);
+      }
+    }
+
+    // Registrar o Service Worker (Essencial para o PWA funcionar Offline)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js')
+        .then(() => console.log("Service Worker Registrado!"))
+        .catch(err => console.error("Erro no Service Worker:", err));
+    }
+  </script>
+</body>
+</html>
